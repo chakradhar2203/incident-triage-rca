@@ -1,0 +1,93 @@
+[
+  {
+    "incident_id": "HIST-1001",
+    "short_description": "Checkout pods restart during peak traffic",
+    "description": "The checkout Java service exceeded its container memory limit after a promotion increased request volume.",
+    "category": "Application",
+    "error_patterns": ["Out of memory", "OOMKilled", "java.lang.OutOfMemoryError", "exit code 137"],
+    "root_cause": "A memory leak in the checkout service retained order objects until the Kubernetes container exceeded its 1 GiB limit.",
+    "suggested_team": "Application Platform Team",
+    "recommended_actions": [
+      "Capture a heap dump and identify retained objects before restarting the workload.",
+      "Roll back the leaking release and temporarily increase the container memory limit.",
+      "Add heap-usage and container working-set alerts at 80 percent."
+    ],
+    "verified_commands": [
+      {"command": "kubectl describe pod checkout-api-0 -n production", "explanation": "Confirm OOMKilled state and container memory limits."},
+      {"command": "kubectl rollout undo deployment/checkout-api -n production", "explanation": "Roll back the most recent checkout deployment."}
+    ]
+  },
+  {
+    "incident_id": "HIST-1002",
+    "short_description": "Order API cannot obtain database connections",
+    "description": "Requests stalled after long transactions exhausted the PostgreSQL connection pool and produced lock waits.",
+    "category": "Database",
+    "error_patterns": ["Database pool exhausted", "Database lock/deadlock", "pool timeout", "lock wait timeout"],
+    "root_cause": "An unindexed reporting query held row locks and saturated the application connection pool.",
+    "suggested_team": "Database Reliability Team",
+    "recommended_actions": [
+      "Identify and cancel only the confirmed blocking query after application-owner approval.",
+      "Add the missing report filter index using the normal database change process.",
+      "Set transaction timeouts and monitor pool utilization."
+    ],
+    "verified_commands": [
+      {"command": "psql -c \"SELECT pid, wait_event, query FROM pg_stat_activity WHERE wait_event IS NOT NULL;\"", "explanation": "List sessions currently waiting on database resources."},
+      {"command": "psql -c \"SELECT * FROM pg_locks WHERE NOT granted;\"", "explanation": "Inspect ungranted locks without modifying database state."}
+    ]
+  },
+  {
+    "incident_id": "HIST-1003",
+    "short_description": "Gateway returns 502 after service deployment",
+    "description": "The reverse proxy could not reach the inventory service because the deployment used the wrong target port.",
+    "category": "Network",
+    "error_patterns": ["HTTP 502", "Connection refused", "BAD_GATEWAY"],
+    "root_cause": "A Kubernetes Service targetPort mismatch routed gateway traffic to a port where the inventory pods were not listening.",
+    "suggested_team": "Cloud Networking Team",
+    "recommended_actions": [
+      "Compare the Service target port with the container listening port.",
+      "Correct the Service manifest and validate endpoints before promotion.",
+      "Add a deployment smoke test through the gateway."
+    ],
+    "verified_commands": [
+      {"command": "kubectl get service inventory-api -n production -o yaml", "explanation": "Inspect the configured service and target ports."},
+      {"command": "kubectl get endpoints inventory-api -n production", "explanation": "Verify that ready pod endpoints are registered."}
+    ]
+  },
+  {
+    "incident_id": "HIST-1004",
+    "short_description": "Log ingestion halted on worker nodes",
+    "description": "A debug logging change filled the node filesystem and prevented agents from writing spool files.",
+    "category": "Infrastructure",
+    "error_patterns": ["Disk space exhausted", "No space left on device", "disk usage 100%"],
+    "root_cause": "Unbounded debug logs exhausted the /var filesystem after log rotation was disabled in the new configuration.",
+    "suggested_team": "Infrastructure Operations Team",
+    "recommended_actions": [
+      "Restore log rotation and reduce the service log level.",
+      "Archive logs according to the retention policy before removing obsolete files.",
+      "Alert on filesystem consumption and inode exhaustion."
+    ],
+    "verified_commands": [
+      {"command": "df -h /var", "explanation": "Check filesystem capacity for the affected volume."},
+      {"command": "du -x -h /var/log --max-depth=2", "explanation": "Identify large log directories without deleting data."}
+    ]
+  },
+  {
+    "incident_id": "HIST-1005",
+    "short_description": "Partner API calls time out after DNS migration",
+    "description": "Workers could not resolve the partner hostname because an old DNS resolver remained in the runtime configuration.",
+    "category": "Network",
+    "error_patterns": ["Connection timeout", "DNS resolution failure", "NXDOMAIN", "HTTP 504"],
+    "root_cause": "The application retained a deprecated DNS resolver address after the network migration.",
+    "suggested_team": "Network Operations Team",
+    "recommended_actions": [
+      "Validate name resolution from the affected runtime environment.",
+      "Deploy the approved resolver configuration and restart affected workers gradually.",
+      "Add DNS resolution to external dependency health checks."
+    ],
+    "verified_commands": [
+      {"command": "nslookup partner.example.internal", "explanation": "Test resolution using the configured resolver."},
+      {"command": "curl -v --connect-timeout 5 https://partner.example.internal/health", "explanation": "Validate DNS, TLS, and connectivity to the partner health endpoint."}
+    ]
+  }
+]
+                  
