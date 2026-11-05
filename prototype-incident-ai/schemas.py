@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from integrations import valid_google_project_id
 
 
 class APIModel(BaseModel):
@@ -35,6 +39,9 @@ class ServiceNowWebhookPayload(APIModel):
     priority: str = Field(default="3", max_length=30)
     raw_logs: str = Field(default="", max_length=500_000)
     recent_changes: list[str] = Field(default_factory=list, max_length=100)
+    knowledge_case_id: str = Field(default="", max_length=100)
+    force_engineer_review: bool = False
+    review_reason: str = Field(default="", max_length=2_000)
 
     def to_incident(self) -> IncidentPayload:
         return IncidentPayload(
@@ -52,13 +59,25 @@ class RuntimeConfigUpdate(APIModel):
     servicenow_instance_url: str | None = Field(default=None, max_length=500)
     servicenow_username: str | None = Field(default=None, max_length=200)
     servicenow_secret: str | None = Field(default=None, max_length=1_000)
-    openai_api_key: str | None = Field(default=None, max_length=1_000)
-    qdrant_url: str | None = Field(default=None, max_length=500)
-    qdrant_api_key: str | None = Field(default=None, max_length=1_000)
-    qdrant_collection: str | None = Field(default=None, max_length=200)
-    openai_model: str | None = Field(default=None, max_length=200)
-    embedding_model: str | None = Field(default=None, max_length=200)
+    anthropic_api_key: str | None = Field(default=None, max_length=1_000)
+    claude_model: str | None = Field(default=None, max_length=200)
+    firebase_project_id: str | None = Field(default=None, max_length=200)
+    firestore_database: str | None = Field(default=None, max_length=200)
+    firestore_collection: str | None = Field(default=None, max_length=200)
     write_back_enabled: bool | None = None
+
+    @field_validator("firebase_project_id")
+    @classmethod
+    def reject_secret_as_firebase_project(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return value
+        cleaned = value.strip()
+        if not valid_google_project_id(cleaned):
+            raise ValueError(
+                "Firebase project ID must be a lowercase Google project ID, for example incident-triage-rca; "
+                "never paste an API key into this field"
+            )
+        return cleaned
 
 
 class ResolutionFeedback(APIModel):
@@ -70,6 +89,13 @@ class ResolutionFeedback(APIModel):
     root_cause: str = Field(min_length=1, max_length=10_000)
     resolution_notes: str = Field(min_length=1, max_length=20_000)
     assignment_group: str = Field(default="Service Desk", max_length=200)
+
+
+class EngineerReviewPayload(APIModel):
+    decision: Literal["approved", "needs_evidence", "rejected"]
+    reviewer: str = Field(min_length=1, max_length=200)
+    notes: str = Field(min_length=1, max_length=5_000)
+    validated_root_cause: str = Field(default="", max_length=10_000)
 
 
 class CommandDetail(APIModel):

@@ -1,0 +1,170 @@
+{
+  "generation": "generation-1",
+  "reviewed_on": "2026-10-09",
+  "policy": {
+    "load_original_unchanged": false,
+    "approval_required_for_disruptive_actions": true,
+    "automatic_remediation_allowed": false,
+    "root_cause_rule": "Do not mark a likely cause as confirmed until the case-specific confirmation evidence is present."
+  },
+  "corrections": [
+    {
+      "case_id": "KC-CANDIDATE-001",
+      "decision": "valid_with_corrections",
+      "diagnostics": ["df -hP /var", "df -iP /var", "du -x --max-depth=1 /var | sort -n", "lsof +L1"],
+      "resolution": "Stop or correct the abnormal log source, preserve required logs, validate a logrotate rule with logrotate -d, and reclaim space only under the retention and change policy.",
+      "safety": "Do not delete an open log or truncate evidence without approval; a deleted-open file may continue consuming blocks until its process closes it."
+    },
+    {
+      "case_id": "KC-CANDIDATE-002",
+      "decision": "valid_with_corrections",
+      "diagnostics": ["uptime", "top -H -b -n 1", "ps -eo pid,ppid,stat,comm,%cpu,%mem --sort=-%cpu | head -20", "pidstat -p <pid> 1 5"],
+      "resolution": "Collect process and application evidence, remove or reject the malformed workload when possible, and use an approved service restart only as temporary recovery. Apply the application fix for permanent resolution.",
+      "safety": "Do not kill the process before identifying the owning service and transaction impact."
+    },
+    {
+      "case_id": "KC-CANDIDATE-003",
+      "decision": "valid_with_corrections",
+      "diagnostics": ["free -m", "vmstat 1 5", "ps -eo pid,comm,rss,vsz,%mem --sort=-rss | head -20", "journalctl -k --grep='Out of memory|Killed process'"],
+      "resolution": "Capture a workload-normalized memory trend and vendor diagnostics before recovery. Restart only with approval, then deploy the vendor or application fix and confirm that RSS no longer grows under comparable load.",
+      "safety": "Low available memory alone is not proof of a leak because Linux uses memory for cache."
+    },
+    {
+      "case_id": "KC-CANDIDATE-004",
+      "decision": "valid_with_corrections",
+      "corrected_root_cause": "The persistent mount entry referenced an identifier that no longer resolved after the approved storage change, while the expected logical volume and filesystem were otherwise healthy.",
+      "diagnostics": ["lsblk -f", "pvs", "vgs", "lvs -a -o +devices", "findmnt --verify --verbose", "multipath -ll"],
+      "resolution": "Back up /etc/fstab, correct the entry using the verified filesystem UUID or supported device-mapper path, run findmnt --verify, and test only the intended mount point.",
+      "safety": "Do not create a filesystem or run filesystem repair until the device identity and data ownership are confirmed."
+    },
+    {
+      "case_id": "KC-CANDIDATE-005",
+      "decision": "valid_with_corrections",
+      "corrected_title": "SSSD domain authentication failure caused by a broken AD machine-account trust",
+      "diagnostics": ["realm list", "getent passwd <user>@<domain>", "sssctl domain-status <domain>", "adcli testjoin -D <domain>", "chronyc tracking"],
+      "resolution": "After proving DNS, time and DC connectivity are healthy, repair or update the machine trust using the approved directory-services procedure. Rejoin the domain only if the supported repair fails.",
+      "safety": "Preserve a tested local administrative access path before changing domain membership or SSSD state."
+    },
+    {
+      "case_id": "KC-CANDIDATE-006",
+      "decision": "valid_with_corrections",
+      "diagnostics": ["getent hosts <hostname>", "cat /etc/resolv.conf", "nmcli dev show", "dig @<resolver> <hostname>", "ip route get <resolver-ip>"],
+      "resolution": "Restore the network path or resolver service. If a resolver change is approved, apply it through the active NetworkManager connection and verify persistence.",
+      "safety": "Do not replace enterprise DNS with a public resolver or permanent hosts-file workaround."
+    },
+    {
+      "case_id": "KC-CANDIDATE-007",
+      "decision": "replace_before_loading",
+      "corrected_title": "SSH gateway access failure caused by an expired TLS certificate on the gateway",
+      "corrected_scope": "The certificate terminates TLS on the access gateway; it is not an OpenSSH user or host certificate.",
+      "diagnostics": ["openssl s_client -connect <gateway>:<port> -servername <gateway> -showcerts", "openssl x509 -in <certificate.pem> -noout -subject -issuer -dates -fingerprint -sha256"],
+      "resolution": "Issue a replacement from the approved CA, validate subject/SAN, chain, private-key association and validity, deploy through the gateway's supported procedure, reload only the affected component, and test a new session.",
+      "rollback": "Retain the prior certificate and configuration until validation completes, then restore them if the gateway fails health checks.",
+      "safety": "If the environment actually uses OpenSSH certificates, validate them with ssh-keygen -L -f <certificate>, not openssl x509."
+    },
+    {
+      "case_id": "KC-CANDIDATE-008",
+      "decision": "valid_with_corrections",
+      "diagnostics": ["dnf repolist -v", "dnf makecache --refresh", "subscription-manager status", "curl -I <repository-baseurl>"],
+      "resolution": "Determine whether failure is local cache, entitlement, proxy/TLS, reachability or published metadata. Correct the responsible layer and retry a metadata refresh before the patch transaction.",
+      "safety": "Do not disable TLS verification or repository signature checking."
+    },
+    {
+      "case_id": "KC-CANDIDATE-009",
+      "decision": "valid_with_corrections",
+      "diagnostics": ["timedatectl", "chronyc tracking", "chronyc sources -v", "journalctl -u chronyd --since '-1 hour'"],
+      "resolution": "Restore reachability to the approved time source and allow chronyd to converge. Use chronyc makestep only when the offset and application impact have been assessed and approval is recorded.",
+      "safety": "A backward or large forward time step can affect databases, clusters, schedulers and audit logs."
+    },
+    {
+      "case_id": "KC-CANDIDATE-010",
+      "decision": "valid_with_corrections",
+      "diagnostics": ["df -hP <backup-mount>", "df -iP <backup-mount>", "findmnt <backup-mount>", "Vendor backup-console capacity, job and retention reports"],
+      "resolution": "Restore capacity by extending the approved repository or expiring data through the backup product's supported retention workflow, then rerun and verify a backup and restore test.",
+      "safety": "Never remove repository files directly from the operating system unless the backup vendor explicitly supports it."
+    },
+    {
+      "case_id": "KC-CANDIDATE-011",
+      "decision": "valid_with_corrections",
+      "diagnostics": ["systemctl status crond", "journalctl -u crond --since today", "crontab -l -u <user>", "run-parts --test <directory>"],
+      "resolution": "Correct the syntax in the owning crontab, preserve the previous entry, confirm the execution user and environment, and test the command non-destructively under that identity.",
+      "safety": "Files in /etc/cron.d include a user field; per-user crontabs do not. Do not copy syntax between them unchanged."
+    },
+    {
+      "case_id": "KC-CANDIDATE-012",
+      "decision": "valid_with_corrections",
+      "diagnostics": ["Get-PSDrive -PSProvider FileSystem", "Get-ChildItem $env:SystemDrive\\inetpub\\logs\\LogFiles -File -Recurse | Sort-Object Length -Descending | Select-Object -First 20 FullName,Length,LastWriteTime", "Get-WebConfigurationProperty -Filter system.applicationHost/sites/siteDefaults/logFile -Name period"],
+      "resolution": "Archive or remove only logs beyond the approved retention period, then configure IIS rollover plus an approved archival/compression or scheduled-retention process.",
+      "safety": "Preserve security, legal and troubleshooting evidence; do not disable IIS logging to recover space."
+    },
+    {
+      "case_id": "KC-CANDIDATE-013",
+      "decision": "valid_with_corrections",
+      "diagnostics": ["Get-Service -Name <service> | Format-List *", "Get-Service -Name <service> -RequiredServices", "sc.exe qc <service>", "Get-WinEvent -FilterHashtable @{LogName='System'; ProviderName='Service Control Manager'; Id=7000,7001,7009,7011} -MaxEvents 50"],
+      "resolution": "Correct the confirmed failed dependency or its configuration, start it under change control, then start and validate the dependent application service.",
+      "safety": "Do not change service dependencies in the registry without a documented vendor configuration and rollback."
+    },
+    {
+      "case_id": "KC-CANDIDATE-014",
+      "decision": "valid_with_corrections",
+      "diagnostics": ["Get-Service TermService", "Test-NetConnection <server> -Port 3389", "qwinsta /server:<server>", "Get-NetTCPConnection -LocalPort 3389 -State Listen"],
+      "resolution": "Use console or approved remote management to correct the confirmed service, listener, firewall or policy fault. Start TermService only when it is unexpectedly stopped and its dependencies are healthy.",
+      "safety": "Restarting Remote Desktop Services can disconnect active users; announce impact and obtain approval."
+    },
+    {
+      "case_id": "KC-CANDIDATE-015",
+      "decision": "valid_with_corrections",
+      "diagnostics": ["Record the exact Windows Update error and KB", "Get-Volume", "Get-Partition", "Review Setup and WindowsUpdateClient event logs"],
+      "resolution": "Follow the Microsoft procedure that matches the confirmed SRP/EFI layout and update error. Back up boot configuration and prepare tested recovery media before any partition or boot-file change.",
+      "safety": "Treat partition resizing or deletion of SRP/EFI content as high risk; generic Disk Management instructions are insufficient."
+    },
+    {
+      "case_id": "KC-CANDIDATE-016",
+      "decision": "valid_with_corrections",
+      "diagnostics": ["New-MpPerformanceRecording -RecordTo <approved-path>", "Get-MpPerformanceReport -Path <recording> -TopFiles 20 -TopProcesses 20", "Get-MpPreference | Select-Object ExclusionPath,ExclusionProcess"],
+      "resolution": "Confirm the scanner contribution, use built-in/server-role exclusions where applicable, and add only the smallest vendor-supported custom exclusion after security approval.",
+      "safety": "Do not disable real-time protection as a test. Broad path, process or extension exclusions create material security exposure."
+    },
+    {
+      "case_id": "KC-CANDIDATE-017",
+      "decision": "valid_with_corrections",
+      "diagnostics": ["Get-Counter '\\Hyper-V Hypervisor Logical Processor(*)\\% Total Run Time'", "Get-Counter '\\Hyper-V Hypervisor Virtual Processor(*)\\% Guest Run Time'", "Get-VM | Select-Object Name,State,ProcessorCount,MemoryAssigned"],
+      "resolution": "Confirm sustained host contention and the responsible workload, then use approved workload throttling, right-sizing, capacity addition or live migration. Validate every affected guest after rebalancing.",
+      "safety": "Do not use guest Task Manager alone to infer physical CPU saturation, and do not call the Hyper-V metric CPU ready."
+    },
+    {
+      "case_id": "KC-CANDIDATE-018",
+      "decision": "valid_with_corrections",
+      "diagnostics": ["Test-ComputerSecureChannel -Verbose", "nltest /sc_verify:<domain>", "nltest /dsgetdc:<domain>", "w32tm /query /status"],
+      "resolution": "After DNS, time and DC connectivity checks pass, run Test-ComputerSecureChannel -Repair with approved domain credentials. Remove/rejoin only if supported repair fails.",
+      "safety": "Confirm local or console administrative access before trust repair. Do not reset the computer account blindly on a domain controller."
+    },
+    {
+      "case_id": "KC-CANDIDATE-019",
+      "decision": "valid_with_corrections",
+      "scope_rule": "Use only when failures are reproduced from multiple network segments and both Linux and Windows against the shared enterprise DNS service.",
+      "diagnostics": ["Linux: dig @<resolver> <known-record>", "Linux: getent hosts <known-record>", "Windows: Resolve-DnsName <known-record> -Server <resolver>", "Windows: Test-NetConnection <resolver> -Port 53"],
+      "resolution": "Invoke the DNS major-incident procedure, restore authoritative/recursive service or approved failover, and validate representative records from both platforms and segments.",
+      "safety": "Avoid mass local resolver or hosts-file changes that hide an enterprise DNS failure."
+    },
+    {
+      "case_id": "KC-CANDIDATE-020",
+      "decision": "valid_with_corrections",
+      "scope_rule": "Use only when a shared authoritative time source or hierarchy affects multiple hosts on both platforms.",
+      "diagnostics": ["Linux: chronyc tracking; chronyc sources -v", "Windows: w32tm /query /status", "Windows: w32tm /query /source", "Compare offsets against the approved authoritative source"],
+      "resolution": "Restore the enterprise time hierarchy or approved failover, allow controlled convergence, and validate Kerberos only after offsets return within policy.",
+      "safety": "Do not force-step clocks fleet-wide without assessing database, clustering, token, scheduler and audit-log impact."
+    }
+  ],
+  "official_references": {
+    "red_hat_performance": "https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/9/htmlsingle/monitoring_and_managing_system_status_and_performance/index",
+    "red_hat_filesystems": "https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/9/html/managing_file_systems/assembly_persistently-mounting-file-systems_managing-file-systems",
+    "red_hat_sssd_ad": "https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/9/html/integrating_rhel_systems_directly_with_windows_active_directory/connecting-rhel-systems-directly-to-ad-using-sssd_integrating-rhel-systems-directly-with-active-directory",
+    "microsoft_kerberos": "https://learn.microsoft.com/en-us/troubleshoot/windows-server/windows-security/kerberos-authentication-troubleshooting-guidance",
+    "microsoft_rds": "https://learn.microsoft.com/en-us/troubleshoot/windows-server/remote/troubleshoot-rds-session-connectivity-guidance",
+    "microsoft_secure_channel": "https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.management/test-computersecurechannel?view=powershell-5.1",
+    "microsoft_hyperv": "https://learn.microsoft.com/en-us/windows-server/administration/performance-tuning/role/hyper-v-server/configuration",
+    "microsoft_defender_performance": "https://learn.microsoft.com/en-us/defender-endpoint/tune-performance-defender-antivirus",
+    "microsoft_iis_logs": "https://learn.microsoft.com/en-us/iis/manage/provisioning-and-managing-iis/managing-iis-log-file-storage"
+  }
+}

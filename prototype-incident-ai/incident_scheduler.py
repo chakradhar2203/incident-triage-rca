@@ -3,46 +3,35 @@
 from __future__ import annotations
 
 import asyncio
-import random
+import json
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Callable
 
 from integrations import ConfigStore, ServiceNowClient
 from schemas import ServiceNowWebhookPayload
 
 
-_TEMPLATES = (
-    {
-        "short_description": "Checkout API pods restart during peak traffic",
-        "description": "Checkout requests fail after the latest release.",
-        "category": "software",
-        "logs": "java.lang.OutOfMemoryError: Java heap space\nOOMKilled exit code 137\nHTTP 503",
-    },
-    {
-        "short_description": "Production host filesystem is almost full",
-        "description": "Application writes fail while the root filesystem reports critical utilization.",
-        "category": "hardware",
-        "logs": "No space left on device\nFilesystem /dev/sda1 98% used\nwrite failed errno=28",
-    },
-    {
-        "short_description": "Orders API cannot connect to PostgreSQL",
-        "description": "Database connections started timing out after a configuration rollout.",
-        "category": "database",
-        "logs": "FATAL: remaining connection slots are reserved\nconnection pool exhausted\nHTTP 500",
-    },
-    {
-        "short_description": "Internal service name intermittently fails DNS lookup",
-        "description": "Application nodes cannot consistently resolve the inventory service.",
-        "category": "network",
-        "logs": "Temporary failure in name resolution\nSERVFAIL inventory.internal\nDNS timeout",
-    },
-    {
-        "short_description": "TLS certificate validation fails for upstream API",
-        "description": "Requests to the partner endpoint fail during the TLS handshake.",
-        "category": "software",
-        "logs": "x509: certificate has expired or is not yet valid\nTLS handshake failed\nHTTP 502",
-    },
-)
+def _load_templates() -> tuple[dict[str, object], ...]:
+    source = Path(__file__).with_name("knowledge_cases_candidates.json")
+    with source.open("r", encoding="utf-8") as handle:
+        cases = json.load(handle)
+    templates: list[dict[str, object]] = []
+    for case in cases:
+        scenario = case.get("synthetic_incident")
+        if not isinstance(scenario, dict):
+            continue
+        templates.append(
+            {
+                **scenario,
+                "knowledge_case_id": case["incident_id"],
+                "short_description": case["short_description"],
+                "description": case["description"],
+            }
+        )
+    if not templates:
+        raise ValueError("No synthetic incident templates were found in the knowledge-case dataset")
+    return tuple(templates)
 
 
 class RecurringIncidentScheduler:
@@ -62,6 +51,8 @@ class RecurringIncidentScheduler:
         self._last_error: str | None = None
         self._last_run_at: datetime | None = None
         self._next_run_at: datetime | None = None
+        self._templates = _load_templates()
+        self._template_index = 0
 
     @property
     def active(self) -> bool:
@@ -75,6 +66,8 @@ class RecurringIncidentScheduler:
             "next_run_at": self._next_run_at.isoformat() if self._next_run_at else None,
             "last_result": self._last_result,
             "last_error": self._last_error,
+            "scenario_count": len(self._templates),
+            "next_scenario_index": self._template_index + 1,
         }
 
     def start(self) -> dict[str, object]:
@@ -114,27 +107,40 @@ class RecurringIncidentScheduler:
             await asyncio.sleep(self.interval_seconds)
 
     def _create_and_process(self) -> None:
-        template = random.choice(_TEMPLATES)
+        template = self._templates[self._template_index]
+        self._template_index = (self._template_index + 1) % len(self._templates)
         created_at = datetime.now(UTC)
         description = f"{template['description']} Synthetic dashboard incident created at {created_at.isoformat()}."
+        logs = str(template["raw_logs"])
+        case_id = str(template["knowledge_case_id"])
+        review_required = bool(template.get("requires_engineer_review", True))
+        review_reason = str(template.get("review_reason", "Engineer validation is required."))
         record = ServiceNowClient(self._config_store.get()).create_incident(
             {
-                "short_description": template["short_description"],
+                "short_description": str(template["short_description"]),
                 "description": description,
-                "category": template["category"],
-                "impact": "2",
-                "urgency": "2",
-                "work_notes": f"Synthetic source logs:\n{template['logs']}",
+                "category": str(template["category"]),
+                "impact": str(template.get("impact", "2")),
+                "urgency": str(template.get("urgency", "2")),
+                "work_notes": (
+                    f"SYNTHETIC PDI INCIDENT — {case_id}\n"
+                    f"Engineer review priority: {'REQUIRED' if review_required else 'STANDARD'}\n"
+                    f"Review reason: {review_reason}\n\nSource logs:\n{logs}"
+                ),
             }
         )
         payload = ServiceNowWebhookPayload(
             sys_id=str(record["sys_id"]),
             number=str(record.get("number", "")),
-            short_description=template["short_description"],
+            short_description=str(template["short_description"]),
             description=description,
-            category=template["category"],
+            category=str(template["category"]),
             priority="3",
-            raw_logs=template["logs"],
+            raw_logs=logs,
+            recent_changes=[str(item) for item in template.get("recent_changes", [])],
+            knowledge_case_id=case_id,
+            force_engineer_review=review_required,
+            review_reason=review_reason,
         )
         pipeline = self._processor(payload)
         write_back = pipeline.get("write_back", {})
@@ -147,4 +153,7 @@ class RecurringIncidentScheduler:
             "sys_id": record.get("sys_id"),
             "short_description": template["short_description"],
             "write_back": "updated",
+            "knowledge_case_id": case_id,
+            "engineer_review_required": review_required,
+            "review_reason": review_reason,
         }

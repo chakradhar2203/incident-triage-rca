@@ -1,8 +1,8 @@
 # AI Incident Triage & RCA Assistant
 
-Developer prototype for receiving ServiceNow incidents, embedding the incident text and logs, retrieving the three closest verified cases, generating a grounded RCA, writing the result back to ServiceNow, and learning from closed-ticket feedback.
+Developer prototype for receiving ServiceNow incidents, creating deterministic local embeddings, retrieving verified resolutions from Cloud Firestore, generating a grounded RCA with Claude, writing the result back to ServiceNow, and learning from closed-ticket feedback.
 
-The default requires no cloud account: it uses a deterministic 384-dimensional local embedding and in-memory cosine search. Configure Qdrant to use a real vector database. Configure an OpenAI API key to use `text-embedding-3-small` (384 dimensions) and Structured Outputs through the Responses API for the RCA; without it, the grounded deterministic synthesizer remains active.
+The default requires no cloud account: it uses a deterministic 384-dimensional local embedding, the bundled demo cases, in-memory cosine search, and a grounded deterministic synthesizer. Configure Cloud Firestore to persist verified resolution vectors and an Anthropic API key to generate the final structured RCA with Claude. Claude receives incident text, parsed evidence, and retrieved verified cases; it never consumes the vectors directly.
 
 ## Run locally
 
@@ -23,15 +23,54 @@ SERVICENOW_INSTANCE_URL=https://dev12345.service-now.com
 SERVICENOW_USERNAME=api.integration
 SERVICENOW_SECRET=replace-me
 SERVICENOW_WRITE_BACK=false
-OPENAI_API_KEY=replace-me
-QDRANT_URL=https://replace-me.cloud.qdrant.io:6333
-QDRANT_API_KEY=replace-me
-QDRANT_COLLECTION=incident_resolutions
-OPENAI_MODEL=gpt-5-mini
-OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+ANTHROPIC_API_KEY=replace-me
+CLAUDE_MODEL=claude-haiku-4-5-20251001
+FIREBASE_PROJECT_ID=your-firebase-project-id
+FIRESTORE_DATABASE=(default)
+FIRESTORE_COLLECTION=incident_resolutions
+GOOGLE_APPLICATION_CREDENTIALS=C:\secure\firebase-service-account.json
 ```
 
-Never commit real credentials. When Qdrant is configured, the bundled verified cases are embedded and upserted automatically before the first query. Closed-ticket feedback is also embedded and upserted immediately.
+Never commit real credentials or the Firebase service-account JSON. `GOOGLE_APPLICATION_CREDENTIALS` must point to a file outside this repository. Dashboard API secrets are write-only and process-local; environment variables are recommended for normal use.
+
+## Firestore vector setup
+
+1. Create a Firebase project and a Cloud Firestore Standard database.
+2. Create a service account that can read and write Firestore, download its JSON key outside this repository, and set `GOOGLE_APPLICATION_CREDENTIALS` to that path.
+3. Create the 384-dimensional vector index required by the `embedding` field:
+
+```cmd
+gcloud firestore indexes composite create --project=your-firebase-project-id --database="(default)" --collection-group=incident_resolutions --query-scope=COLLECTION --field-config=^^^^@^^^^field-path=embedding@vector-config={dimension=384,flat={}}
+```
+
+The four carets on each side of `@` are required by `cmd.exe` and PowerShell on Windows. They select `@` as the outer dictionary delimiter so the comma inside the vector configuration is preserved.
+
+Wait until the index reports `READY`. Firestore stores only final verified resolutions in `incident_resolutions`; AI review attempts and rejected recommendations must not be inserted into that collection.
+
+The Firestore collection may start empty. To test vector retrieval with the five original synthetic cases in `mock_dataset.json`, run this explicit one-time demo seed after setting the Firebase environment variables:
+
+```powershell
+python seed_firestore.py
+```
+
+For the PDI/developer environment only, load the five original cases plus the 20 corrected Generation 1 server candidates:
+
+```powershell
+python seed_firestore.py --include-candidates
+```
+
+The application loads all 25 cases in local mode. The recurring ServiceNow poster cycles through 20 server incidents aligned one-to-one with the corrected server cases. Do not use `--include-candidates` for a production verified-resolution collection until your organization has completed SME approval and provenance review.
+
+Do not run the demo seed against a production collection. For real use, resolved ServiceNow incidents should enter through `/api/v1/servicenow/resolution-feedback` after engineer verification.
+
+### Grounding policy
+
+RAG output is constrained after generation, not only through prompting:
+
+- With no engineer-verified match above the retrieval threshold, confidence is capped at 45%, the root cause is labeled as an unverified hypothesis, and executable commands are removed.
+- With verified matches, confidence is capped by retrieval strength and commands are allowed only when copied exactly from the matched engineer-verified resolutions.
+- Every generated response includes an explicit historical-correlation evidence line.
+- AI recommendations and rejected reviews never enter `incident_resolutions`; only engineer-verified resolution feedback is embedded and stored for future retrieval.
 
 ## ServiceNow developer sandbox
 
@@ -80,7 +119,7 @@ Create a second **After Update** Business Rule conditioned on the incident becom
 }
 ```
 
-The feedback endpoint updates the in-memory retrieval corpus for the current process. Persistent Qdrant upsert is intentionally not enabled until the connection and embedding provider are configured.
+The feedback endpoint updates the in-memory retrieval corpus for the current process. When Firebase is configured, it also creates a local-hashing vector and upserts the verified resolution into Firestore immediately.
 
 ## API endpoints
 
@@ -89,6 +128,7 @@ The feedback endpoint updates the in-memory retrieval corpus for the current pro
 - `POST /api/v1/servicenow/resolution-feedback` — add a verified resolution
 - `GET /api/v1/prototype/dashboard/{incident_id}` — evidence and top-three matches
 - `POST /api/v1/prototype/copilot` — grounded incident Q&A
+- `POST /api/v1/prototype/reviews/{incident_id}` — record approve, needs-evidence, or reject engineer decisions without resolving or publishing
 - `GET /api/v1/metrics` — RCA/dashboard metrics
 - `GET` / `PUT /api/v1/config` — public status and write-only runtime configuration
 
@@ -96,7 +136,7 @@ Run tests with `python -m pytest -q`.
 
 ## Seed synthetic incidents with a script
 
-The included `seed_servicenow.py` creates up to three safe synthetic incidents through the ServiceNow Table API. Keep the dashboard/API running in one terminal, then use a second terminal:
+The included `seed_servicenow.py` creates up to three safe synthetic incidents through the ServiceNow Table API. The dashboard recurring poster separately cycles through the 20 server scenarios aligned with the knowledge cases. Keep the dashboard/API running in one terminal, then use a second terminal:
 
 ```powershell
 $env:SERVICENOW_INSTANCE_URL = "https://dev12345.service-now.com"

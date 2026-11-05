@@ -1,0 +1,12 @@
+[
+  {"label":"AI Review Status","element":"u_ai_review_status","type":"choice","default":"pending","choices":["pending","approved","needs_evidence","rejected"]},
+  {"label":"AI Review Priority","element":"u_ai_review_priority","type":"choice","default":"standard","choices":["standard","required"]},
+  {"label":"AI Confidence","element":"u_ai_confidence","type":"decimal","read_only":true},
+  {"label":"AI Knowledge Case","element":"u_ai_knowledge_case","type":"string","max_length":100,"read_only":true},
+  {"label":"AI Review Reason","element":"u_ai_review_reason","type":"string","max_length":2000,"read_only":true},
+  {"label":"AI Validated Root Cause","element":"u_ai_validated_root_cause","type":"html"},
+  {"label":"AI Engineer Notes","element":"u_ai_engineer_notes","type":"html"},
+  {"label":"AI Reviewed By","element":"u_ai_reviewed_by","type":"reference","reference":"sys_user","read_only":true},
+  {"label":"AI Reviewed At","element":"u_ai_reviewed_at","type":"glide_date_time","read_only":true},
+  {"label":"AI Synthetic Test","element":"u_ai_synthetic_test","type":"boolean","default":false,"read_only":true}
+]

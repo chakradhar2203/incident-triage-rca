@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.env
+.env
+.venv/
+env/
+venv/
+
+# Secrets & Credentials
+*firebase*.json
+*service-account*.json
+*.key
+*.pem
+
+# Temporary & Output files
+tmp/
+output/pdf/
+output/*.pdf
+
+# IDE
+.vscode/
+.idea/

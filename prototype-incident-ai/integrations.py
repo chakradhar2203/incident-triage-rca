@@ -3,11 +3,21 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from threading import RLock
 from urllib.parse import urlparse
 
 import httpx
+
+
+_GOOGLE_PROJECT_ID = re.compile(r"^[a-z][a-z0-9-]{4,28}[a-z0-9]$")
+
+
+def valid_google_project_id(value: str) -> bool:
+    """Reject malformed IDs and values that resemble accidentally pasted secrets."""
+
+    return bool(_GOOGLE_PROJECT_ID.fullmatch(value)) and not value.casefold().startswith("sk-")
 
 
 def _env(name: str) -> str:
@@ -19,12 +29,15 @@ class RuntimeConfig:
     servicenow_instance_url: str = field(default_factory=lambda: _env("SERVICENOW_INSTANCE_URL"))
     servicenow_username: str = field(default_factory=lambda: _env("SERVICENOW_USERNAME"))
     servicenow_secret: str = field(default_factory=lambda: _env("SERVICENOW_SECRET"))
-    openai_api_key: str = field(default_factory=lambda: _env("OPENAI_API_KEY"))
-    qdrant_url: str = field(default_factory=lambda: _env("QDRANT_URL"))
-    qdrant_api_key: str = field(default_factory=lambda: _env("QDRANT_API_KEY"))
-    qdrant_collection: str = field(default_factory=lambda: _env("QDRANT_COLLECTION") or "incident_resolutions")
-    openai_model: str = field(default_factory=lambda: _env("OPENAI_MODEL") or "gpt-5-mini")
-    embedding_model: str = field(default_factory=lambda: _env("OPENAI_EMBEDDING_MODEL") or "text-embedding-3-small")
+    anthropic_api_key: str = field(default_factory=lambda: _env("ANTHROPIC_API_KEY"))
+    claude_model: str = field(default_factory=lambda: _env("CLAUDE_MODEL") or "claude-haiku-4-5-20251001")
+    firebase_project_id: str = field(
+        default_factory=lambda: _env("FIREBASE_PROJECT_ID") or _env("GOOGLE_CLOUD_PROJECT")
+    )
+    firestore_database: str = field(default_factory=lambda: _env("FIRESTORE_DATABASE") or "(default)")
+    firestore_collection: str = field(
+        default_factory=lambda: _env("FIRESTORE_COLLECTION") or "incident_resolutions"
+    )
     write_back_enabled: bool = field(default_factory=lambda: _env("SERVICENOW_WRITE_BACK").lower() == "true")
 
     def public_view(self) -> dict[str, object]:
@@ -32,12 +45,12 @@ class RuntimeConfig:
             "servicenow_instance_url": self.servicenow_instance_url,
             "servicenow_username": self.servicenow_username,
             "servicenow_secret_configured": bool(self.servicenow_secret),
-            "openai_api_key_configured": bool(self.openai_api_key),
-            "qdrant_url": self.qdrant_url,
-            "qdrant_api_key_configured": bool(self.qdrant_api_key),
-            "qdrant_collection": self.qdrant_collection,
-            "openai_model": self.openai_model,
-            "embedding_model": self.embedding_model,
+            "anthropic_api_key_configured": bool(self.anthropic_api_key),
+            "claude_model": self.claude_model,
+            "firebase_project_id": self.firebase_project_id if valid_google_project_id(self.firebase_project_id) else "",
+            "firestore_database": self.firestore_database,
+            "firestore_collection": self.firestore_collection,
+            "firestore_configured": self.is_firestore_ready,
             "write_back_enabled": self.write_back_enabled,
             "mode": "sandbox-connected" if self.is_servicenow_ready else "local-demo",
         }
@@ -47,10 +60,14 @@ class RuntimeConfig:
         return bool(self.servicenow_instance_url and self.servicenow_username and self.servicenow_secret)
 
     @property
-    def is_openai_ready(self) -> bool:
+    def is_claude_ready(self) -> bool:
         """Reject obvious placeholders before any billable external request is attempted."""
 
-        return self.openai_api_key.startswith("sk-") and len(self.openai_api_key) >= 20
+        return self.anthropic_api_key.startswith("sk-ant-") and len(self.anthropic_api_key) >= 20
+
+    @property
+    def is_firestore_ready(self) -> bool:
+        return valid_google_project_id(self.firebase_project_id)
 
 
 class ConfigStore:
@@ -132,3 +149,33 @@ class ServiceNowClient:
         )
         response.raise_for_status()
         return {"connected": True, "sample_count": len(response.json().get("result", []))}
+
+    def list_records(self, table: str, query: str, fields: str = "sys_id", limit: int = 10) -> list[dict[str, object]]:
+        base_url = _validated_instance_url(self.config.servicenow_instance_url)
+        response = httpx.get(
+            f"{base_url}/api/now/table/{table}",
+            params={
+                "sysparm_query": query,
+                "sysparm_fields": fields,
+                "sysparm_limit": str(limit),
+                "sysparm_exclude_reference_link": "true",
+            },
+            headers={"Accept": "application/json"},
+            auth=(self.config.servicenow_username, self.config.servicenow_secret),
+            timeout=20.0,
+        )
+        response.raise_for_status()
+        return response.json().get("result", [])
+
+    def create_record(self, table: str, values: dict[str, object]) -> dict[str, object]:
+        base_url = _validated_instance_url(self.config.servicenow_instance_url)
+        response = httpx.post(
+            f"{base_url}/api/now/table/{table}",
+            params={"sysparm_input_display_value": "true", "sysparm_exclude_reference_link": "true"},
+            headers={"Accept": "application/json", "Content-Type": "application/json"},
+            auth=(self.config.servicenow_username, self.config.servicenow_secret),
+            json=values,
+            timeout=20.0,
+        )
+        response.raise_for_status()
+        return response.json().get("result", {})

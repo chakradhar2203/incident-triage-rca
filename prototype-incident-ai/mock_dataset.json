@@ -4,7 +4,12 @@
     "short_description": "Checkout pods restart during peak traffic",
     "description": "The checkout Java service exceeded its container memory limit after a promotion increased request volume.",
     "category": "Application",
-    "error_patterns": ["Out of memory", "OOMKilled", "java.lang.OutOfMemoryError", "exit code 137"],
+    "error_patterns": [
+      "Out of memory",
+      "OOMKilled",
+      "java.lang.OutOfMemoryError",
+      "exit code 137"
+    ],
     "root_cause": "A memory leak in the checkout service retained order objects until the Kubernetes container exceeded its 1 GiB limit.",
     "suggested_team": "Application Platform Team",
     "recommended_actions": [
@@ -13,8 +18,14 @@
       "Add heap-usage and container working-set alerts at 80 percent."
     ],
     "verified_commands": [
-      {"command": "kubectl describe pod checkout-api-0 -n production", "explanation": "Confirm OOMKilled state and container memory limits."},
-      {"command": "kubectl rollout undo deployment/checkout-api -n production", "explanation": "Roll back the most recent checkout deployment."}
+      {
+        "command": "kubectl describe pod checkout-api-0 -n production",
+        "explanation": "Confirm OOMKilled state and container memory limits."
+      },
+      {
+        "command": "kubectl rollout undo deployment/checkout-api -n production",
+        "explanation": "Roll back the most recent checkout deployment."
+      }
     ]
   },
   {
@@ -22,7 +33,12 @@
     "short_description": "Order API cannot obtain database connections",
     "description": "Requests stalled after long transactions exhausted the PostgreSQL connection pool and produced lock waits.",
     "category": "Database",
-    "error_patterns": ["Database pool exhausted", "Database lock/deadlock", "pool timeout", "lock wait timeout"],
+    "error_patterns": [
+      "Database pool exhausted",
+      "Database lock/deadlock",
+      "pool timeout",
+      "lock wait timeout"
+    ],
     "root_cause": "An unindexed reporting query held row locks and saturated the application connection pool.",
     "suggested_team": "Database Reliability Team",
     "recommended_actions": [
@@ -31,8 +47,14 @@
       "Set transaction timeouts and monitor pool utilization."
     ],
     "verified_commands": [
-      {"command": "psql -c \"SELECT pid, wait_event, query FROM pg_stat_activity WHERE wait_event IS NOT NULL;\"", "explanation": "List sessions currently waiting on database resources."},
-      {"command": "psql -c \"SELECT * FROM pg_locks WHERE NOT granted;\"", "explanation": "Inspect ungranted locks without modifying database state."}
+      {
+        "command": "psql -c \"SELECT pid, wait_event, query FROM pg_stat_activity WHERE wait_event IS NOT NULL;\"",
+        "explanation": "List sessions currently waiting on database resources."
+      },
+      {
+        "command": "psql -c \"SELECT * FROM pg_locks WHERE NOT granted;\"",
+        "explanation": "Inspect ungranted locks without modifying database state."
+      }
     ]
   },
   {
@@ -40,7 +62,11 @@
     "short_description": "Gateway returns 502 after service deployment",
     "description": "The reverse proxy could not reach the inventory service because the deployment used the wrong target port.",
     "category": "Network",
-    "error_patterns": ["HTTP 502", "Connection refused", "BAD_GATEWAY"],
+    "error_patterns": [
+      "HTTP 502",
+      "Connection refused",
+      "BAD_GATEWAY"
+    ],
     "root_cause": "A Kubernetes Service targetPort mismatch routed gateway traffic to a port where the inventory pods were not listening.",
     "suggested_team": "Cloud Networking Team",
     "recommended_actions": [
@@ -49,8 +75,14 @@
       "Add a deployment smoke test through the gateway."
     ],
     "verified_commands": [
-      {"command": "kubectl get service inventory-api -n production -o yaml", "explanation": "Inspect the configured service and target ports."},
-      {"command": "kubectl get endpoints inventory-api -n production", "explanation": "Verify that ready pod endpoints are registered."}
+      {
+        "command": "kubectl get service inventory-api -n production -o yaml",
+        "explanation": "Inspect the configured service and target ports."
+      },
+      {
+        "command": "kubectl get endpoints inventory-api -n production",
+        "explanation": "Verify that ready pod endpoints are registered."
+      }
     ]
   },
   {
@@ -58,7 +90,11 @@
     "short_description": "Log ingestion halted on worker nodes",
     "description": "A debug logging change filled the node filesystem and prevented agents from writing spool files.",
     "category": "Infrastructure",
-    "error_patterns": ["Disk space exhausted", "No space left on device", "disk usage 100%"],
+    "error_patterns": [
+      "Disk space exhausted",
+      "No space left on device",
+      "disk usage 100%"
+    ],
     "root_cause": "Unbounded debug logs exhausted the /var filesystem after log rotation was disabled in the new configuration.",
     "suggested_team": "Infrastructure Operations Team",
     "recommended_actions": [
@@ -67,8 +103,14 @@
       "Alert on filesystem consumption and inode exhaustion."
     ],
     "verified_commands": [
-      {"command": "df -h /var", "explanation": "Check filesystem capacity for the affected volume."},
-      {"command": "du -x -h /var/log --max-depth=2", "explanation": "Identify large log directories without deleting data."}
+      {
+        "command": "df -h /var",
+        "explanation": "Check filesystem capacity for the affected volume."
+      },
+      {
+        "command": "du -x -h /var/log --max-depth=2",
+        "explanation": "Identify large log directories without deleting data."
+      }
     ]
   },
   {
@@ -76,7 +118,12 @@
     "short_description": "Partner API calls time out after DNS migration",
     "description": "Workers could not resolve the partner hostname because an old DNS resolver remained in the runtime configuration.",
     "category": "Network",
-    "error_patterns": ["Connection timeout", "DNS resolution failure", "NXDOMAIN", "HTTP 504"],
+    "error_patterns": [
+      "Connection timeout",
+      "DNS resolution failure",
+      "NXDOMAIN",
+      "HTTP 504"
+    ],
     "root_cause": "The application retained a deprecated DNS resolver address after the network migration.",
     "suggested_team": "Network Operations Team",
     "recommended_actions": [
@@ -85,9 +132,885 @@
       "Add DNS resolution to external dependency health checks."
     ],
     "verified_commands": [
-      {"command": "nslookup partner.example.internal", "explanation": "Test resolution using the configured resolver."},
-      {"command": "curl -v --connect-timeout 5 https://partner.example.internal/health", "explanation": "Validate DNS, TLS, and connectivity to the partner health endpoint."}
+      {
+        "command": "nslookup partner.example.internal",
+        "explanation": "Test resolution using the configured resolver."
+      },
+      {
+        "command": "curl -v --connect-timeout 5 https://partner.example.internal/health",
+        "explanation": "Validate DNS, TLS, and connectivity to the partner health endpoint."
+      }
     ]
+  },
+  {
+    "incident_id": "HIST-1006",
+    "short_description": "RHEL /var full from uncontrolled application logs",
+    "description": "A RHEL application exhausts /var because debug logs grow without an effective rotation policy.",
+    "category": "Infrastructure",
+    "error_patterns": [
+      "No space left on device",
+      "/var 95%",
+      "write failed errno=28"
+    ],
+    "root_cause": "Debug logging remained enabled and the application log had no effective rotation rule.",
+    "suggested_team": "Linux Operations Team",
+    "recommended_actions": [
+      "Preserve required evidence and identify the growing file and owning process.",
+      "Correct the abnormal log source and validate the logrotate rule in dry-run mode.",
+      "Reclaim space only under the approved retention and change policy."
+    ],
+    "verified_commands": [
+      {
+        "command": "df -hP /var",
+        "explanation": "Confirm capacity on the affected filesystem."
+      },
+      {
+        "command": "df -iP /var",
+        "explanation": "Exclude inode exhaustion."
+      },
+      {
+        "command": "lsof +L1",
+        "explanation": "Find deleted files still held open."
+      }
+    ],
+    "review_status": "validated_candidate",
+    "platform": "RHEL/Linux",
+    "synthetic_incident": {
+      "category": "hardware",
+      "impact": "2",
+      "urgency": "2",
+      "raw_logs": "rsyslogd: error writing /var/log/messages: No space left on device\nFilesystem /var 98% used\nwrite failed errno=28",
+      "recent_changes": [
+        "Application DEBUG logging enabled"
+      ],
+      "requires_engineer_review": false,
+      "review_reason": "Strong signature match; engineer must still approve any deletion or truncation."
+    }
+  },
+  {
+    "incident_id": "HIST-1007",
+    "short_description": "RHEL CPU saturation from runaway application thread",
+    "description": "A service consumes sustained CPU after malformed workload input triggers a processing loop.",
+    "category": "Performance",
+    "error_patterns": [
+      "CPU utilization above 90%",
+      "high load average",
+      "process CPU 100%"
+    ],
+    "root_cause": "A malformed workload triggered a repeat-processing loop in one application process.",
+    "suggested_team": "Application Operations Team",
+    "recommended_actions": [
+      "Capture process and thread evidence before recovery.",
+      "Remove or reject the triggering workload when possible.",
+      "Use an approved restart only as temporary recovery and deploy the application fix."
+    ],
+    "verified_commands": [
+      {
+        "command": "top -H -b -n 1",
+        "explanation": "Identify CPU-heavy threads."
+      },
+      {
+        "command": "ps -eo pid,ppid,stat,comm,%cpu,%mem --sort=-%cpu | head -20",
+        "explanation": "List the leading CPU consumers."
+      }
+    ],
+    "review_status": "validated_candidate",
+    "platform": "RHEL/Linux",
+    "synthetic_incident": {
+      "category": "software",
+      "impact": "2",
+      "urgency": "2",
+      "raw_logs": "CPU utilization 99% for 15 minutes\nworker-7 repeated malformed payload processing\nload average: 18.4",
+      "recent_changes": [
+        "New input feed enabled"
+      ],
+      "requires_engineer_review": true,
+      "review_reason": "A restart or process termination is disruptive and the triggering workload must be proven."
+    }
+  },
+  {
+    "incident_id": "HIST-1008",
+    "short_description": "RHEL memory pressure from application leak",
+    "description": "A long-running service shows workload-independent RSS growth, paging, and eventual OOM activity.",
+    "category": "Performance",
+    "error_patterns": [
+      "Out of memory",
+      "Killed process",
+      "RSS growth",
+      "swap usage"
+    ],
+    "root_cause": "The application retained allocations after completed transactions, causing repeatable RSS growth under comparable load.",
+    "suggested_team": "Application Operations Team",
+    "recommended_actions": [
+      "Capture RSS, paging and kernel OOM evidence before recovery.",
+      "Restart only through the approved recovery procedure.",
+      "Deploy the vendor or application fix and verify a stable memory trend."
+    ],
+    "verified_commands": [
+      {
+        "command": "vmstat 1 5",
+        "explanation": "Observe paging, runnable tasks and CPU state."
+      },
+      {
+        "command": "ps -eo pid,comm,rss,vsz,%mem --sort=-rss | head -20",
+        "explanation": "List processes by resident memory."
+      },
+      {
+        "command": "journalctl -k --grep='Out of memory|Killed process'",
+        "explanation": "Find kernel OOM evidence."
+      }
+    ],
+    "review_status": "validated_candidate",
+    "platform": "RHEL/Linux",
+    "synthetic_incident": {
+      "category": "software",
+      "impact": "2",
+      "urgency": "2",
+      "raw_logs": "kernel: Out of memory: Killed process 8421 (orders-api)\norders-api RSS increased for 18 hours\nswap usage 92%",
+      "recent_changes": [],
+      "requires_engineer_review": true,
+      "review_reason": "A restart is temporary recovery; leak confirmation and ownership are required."
+    }
+  },
+  {
+    "incident_id": "HIST-1009",
+    "short_description": "RHEL LVM filesystem missing after storage change",
+    "description": "A persistent mount entry no longer resolves after approved storage maintenance although the expected data volume should remain present.",
+    "category": "Infrastructure",
+    "error_patterns": [
+      "mount special device does not exist",
+      "dependency failed for mount",
+      "logical volume not found"
+    ],
+    "root_cause": "The persistent mount entry referenced an identifier that no longer resolved after the storage change while the expected logical volume and filesystem remained healthy.",
+    "suggested_team": "Linux Storage Team",
+    "recommended_actions": [
+      "Verify PV, VG, LV, multipath and filesystem identity.",
+      "Back up and validate fstab with findmnt before changing it.",
+      "Test only the intended mount and confirm application access."
+    ],
+    "verified_commands": [
+      {
+        "command": "lsblk -f",
+        "explanation": "Display block devices, filesystems and UUIDs."
+      },
+      {
+        "command": "lvs -a -o +devices",
+        "explanation": "Map logical volumes to backing devices."
+      },
+      {
+        "command": "findmnt --verify --verbose",
+        "explanation": "Validate persistent mount definitions."
+      }
+    ],
+    "review_status": "validated_candidate",
+    "platform": "RHEL/Linux",
+    "synthetic_incident": {
+      "category": "hardware",
+      "impact": "1",
+      "urgency": "2",
+      "raw_logs": "mount: special device /dev/mapper/data-app does not exist\nsystemd: Dependency failed for /appdata",
+      "recent_changes": [
+        "SAN presentation maintenance completed"
+      ],
+      "requires_engineer_review": true,
+      "review_reason": "Storage identity and fstab changes can cause data loss or boot impact."
+    }
+  },
+  {
+    "incident_id": "HIST-1010",
+    "short_description": "RHEL SSSD authentication fails from broken AD machine trust",
+    "description": "Domain identities fail while local access remains available and DNS/time connectivity are otherwise healthy.",
+    "category": "Identity",
+    "error_patterns": [
+      "SSSD backend is offline",
+      "Preauthentication failed",
+      "machine account password"
+    ],
+    "root_cause": "The host machine-account secret no longer matched the Active Directory computer account.",
+    "suggested_team": "Identity and Access Team",
+    "recommended_actions": [
+      "Verify DNS, time, domain-controller reachability and SSSD status.",
+      "Confirm the join with adcli testjoin.",
+      "Repair the trust using the approved directory procedure; rejoin only as a last resort."
+    ],
+    "verified_commands": [
+      {
+        "command": "realm list",
+        "explanation": "Show configured domain membership."
+      },
+      {
+        "command": "sssctl domain-status <domain>",
+        "explanation": "Inspect SSSD domain state."
+      },
+      {
+        "command": "adcli testjoin -D <domain>",
+        "explanation": "Test the machine-account join without changing it."
+      }
+    ],
+    "review_status": "validated_candidate",
+    "platform": "RHEL/Linux",
+    "synthetic_incident": {
+      "category": "software",
+      "impact": "2",
+      "urgency": "1",
+      "raw_logs": "sssd_be: Backend is offline\nkrb5_child: Preauthentication failed\nlocal account login succeeds",
+      "recent_changes": [
+        "VM restored from an older snapshot"
+      ],
+      "requires_engineer_review": true,
+      "review_reason": "Trust repair needs directory credentials and a tested local access path."
+    }
+  },
+  {
+    "incident_id": "HIST-1011",
+    "short_description": "RHEL hostname resolution fails because configured resolver is unreachable",
+    "description": "Hostnames fail while IP connectivity works because the configured enterprise resolver cannot be reached from one server.",
+    "category": "Network",
+    "error_patterns": [
+      "Temporary failure in name resolution",
+      "SERVFAIL",
+      "DNS timeout"
+    ],
+    "root_cause": "The server lost its network path to the configured enterprise DNS resolver.",
+    "suggested_team": "Network Operations Team",
+    "recommended_actions": [
+      "Test the configured resolver directly and verify its route.",
+      "Restore the network path or resolver service.",
+      "Apply any approved persistent resolver change through NetworkManager."
+    ],
+    "verified_commands": [
+      {
+        "command": "getent hosts <hostname>",
+        "explanation": "Test resolution through the system resolver."
+      },
+      {
+        "command": "nmcli dev show",
+        "explanation": "Display active DNS configuration."
+      },
+      {
+        "command": "dig @<resolver> <hostname>",
+        "explanation": "Query the configured resolver directly."
+      }
+    ],
+    "review_status": "validated_candidate",
+    "platform": "RHEL/Linux",
+    "synthetic_incident": {
+      "category": "network",
+      "impact": "2",
+      "urgency": "2",
+      "raw_logs": "Temporary failure in name resolution\nDNS query to 10.20.30.40 timed out\nIP connection to dependency succeeds",
+      "recent_changes": [
+        "Network route policy updated"
+      ],
+      "requires_engineer_review": false,
+      "review_reason": "Read-only diagnosis is safe; persistent DNS changes still require approval."
+    }
+  },
+  {
+    "incident_id": "HIST-1012",
+    "short_description": "SSH gateway access fails from expired gateway TLS certificate",
+    "description": "A TLS-terminating access gateway presents an expired X.509 certificate; this case does not describe OpenSSH host certificates.",
+    "category": "Security",
+    "error_patterns": [
+      "certificate has expired",
+      "TLS handshake failed",
+      "notAfter"
+    ],
+    "root_cause": "The access gateway TLS certificate passed its validity end date before renewal was deployed.",
+    "suggested_team": "Security Engineering Team",
+    "recommended_actions": [
+      "Confirm the presented certificate, SAN, issuer, chain and validity dates.",
+      "Issue and validate a replacement from the approved CA.",
+      "Deploy through the gateway procedure and retain the prior certificate for rollback."
+    ],
+    "verified_commands": [
+      {
+        "command": "openssl s_client -connect <gateway>:<port> -servername <gateway> -showcerts",
+        "explanation": "Inspect the certificate presented by the TLS gateway."
+      },
+      {
+        "command": "openssl x509 -in <certificate.pem> -noout -subject -issuer -dates -fingerprint -sha256",
+        "explanation": "Inspect a saved X.509 certificate."
+      }
+    ],
+    "review_status": "validated_candidate",
+    "platform": "RHEL/Linux",
+    "synthetic_incident": {
+      "category": "software",
+      "impact": "2",
+      "urgency": "2",
+      "raw_logs": "gateway TLS handshake failed\nx509: certificate has expired\nnotAfter=Oct 08 23:59:59 2026 GMT",
+      "recent_changes": [],
+      "requires_engineer_review": true,
+      "review_reason": "Certificate issuance, key association and deployment require security approval."
+    }
+  },
+  {
+    "incident_id": "HIST-1013",
+    "short_description": "RHEL DNF patching fails from invalid repository metadata",
+    "description": "Multiple RHEL systems cannot refresh repository metadata during an approved patch cycle.",
+    "category": "Patch",
+    "error_patterns": [
+      "Failed to download metadata for repo",
+      "repomd.xml",
+      "Cannot prepare internal mirrorlist"
+    ],
+    "root_cause": "The internal repository published incomplete or inconsistent metadata during synchronization.",
+    "suggested_team": "Linux Patch Management Team",
+    "recommended_actions": [
+      "Separate client cache, entitlement, proxy/TLS and repository publication failures.",
+      "Correct the responsible repository layer.",
+      "Refresh metadata and retry the patch transaction without disabling signature or TLS checks."
+    ],
+    "verified_commands": [
+      {
+        "command": "dnf repolist -v",
+        "explanation": "Show enabled repositories and URLs."
+      },
+      {
+        "command": "dnf makecache --refresh",
+        "explanation": "Reproduce metadata refresh without installing packages."
+      },
+      {
+        "command": "subscription-manager status",
+        "explanation": "Check entitlement status where applicable."
+      }
+    ],
+    "review_status": "validated_candidate",
+    "platform": "RHEL/Linux",
+    "synthetic_incident": {
+      "category": "software",
+      "impact": "3",
+      "urgency": "2",
+      "raw_logs": "Errors during downloading metadata for repository appstream\nrepomd.xml checksum mismatch\npatch job failed on 14 hosts",
+      "recent_changes": [
+        "Internal repository synchronization completed"
+      ],
+      "requires_engineer_review": false,
+      "review_reason": "Diagnosis is read-only; repository repair remains change controlled."
+    }
+  },
+  {
+    "incident_id": "HIST-1014",
+    "short_description": "RHEL clock drift causes Kerberos failures",
+    "description": "A RHEL host loses its approved chrony source and drifts beyond the authentication tolerance.",
+    "category": "Identity",
+    "error_patterns": [
+      "Clock skew too great",
+      "No suitable source for synchronisation",
+      "Kerberos authentication failed"
+    ],
+    "root_cause": "The approved NTP source became unreachable and the host clock drifted outside Kerberos tolerance.",
+    "suggested_team": "Linux Operations Team",
+    "recommended_actions": [
+      "Confirm source state and measured offset.",
+      "Restore reachability to the approved time source and allow controlled convergence.",
+      "Use a time step only after assessing application and cluster impact."
+    ],
+    "verified_commands": [
+      {
+        "command": "timedatectl",
+        "explanation": "Show system clock and synchronization state."
+      },
+      {
+        "command": "chronyc tracking",
+        "explanation": "Show offset and synchronization state."
+      },
+      {
+        "command": "chronyc sources -v",
+        "explanation": "Show source selection and reachability."
+      }
+    ],
+    "review_status": "validated_candidate",
+    "platform": "RHEL/Linux",
+    "synthetic_incident": {
+      "category": "software",
+      "impact": "2",
+      "urgency": "1",
+      "raw_logs": "krb5: Clock skew too great\nchronyd: No suitable source for synchronisation\nSystem time offset 412 seconds",
+      "recent_changes": [
+        "Firewall policy updated for NTP segment"
+      ],
+      "requires_engineer_review": true,
+      "review_reason": "Large clock corrections can affect databases, clusters, schedulers and audit records."
+    }
+  },
+  {
+    "incident_id": "HIST-1015",
+    "short_description": "RHEL backup job fails because repository is full",
+    "description": "Backup writes fail after retention growth exhausts the supported backup repository.",
+    "category": "Backup",
+    "error_patterns": [
+      "backup target full",
+      "No space left on device",
+      "repository capacity 100%"
+    ],
+    "root_cause": "Retention growth exceeded the capacity planned for the backup repository.",
+    "suggested_team": "Backup Operations Team",
+    "recommended_actions": [
+      "Confirm filesystem and backup-product repository capacity.",
+      "Extend capacity or expire data through the supported retention workflow.",
+      "Rerun the job and complete a restore validation."
+    ],
+    "verified_commands": [
+      {
+        "command": "df -hP <backup-mount>",
+        "explanation": "Check repository filesystem capacity."
+      },
+      {
+        "command": "df -iP <backup-mount>",
+        "explanation": "Check repository inode capacity."
+      },
+      {
+        "command": "findmnt <backup-mount>",
+        "explanation": "Confirm the expected repository mount."
+      }
+    ],
+    "review_status": "validated_candidate",
+    "platform": "RHEL/Linux",
+    "synthetic_incident": {
+      "category": "hardware",
+      "impact": "2",
+      "urgency": "2",
+      "raw_logs": "Backup job failed: target repository full\nNo space left on device\nretention set expanded from 14 to 30 days",
+      "recent_changes": [
+        "Backup retention increased"
+      ],
+      "requires_engineer_review": true,
+      "review_reason": "Repository files must never be deleted outside the backup product workflow."
+    }
+  },
+  {
+    "incident_id": "HIST-1016",
+    "short_description": "RHEL scheduled job does not run because cron entry is invalid",
+    "description": "A required job stops executing after an invalid cron definition is deployed.",
+    "category": "Infrastructure",
+    "error_patterns": [
+      "bad minute",
+      "errors in crontab file",
+      "cron job not executed"
+    ],
+    "root_cause": "The deployed cron entry used invalid scheduling syntax for its crontab location.",
+    "suggested_team": "Linux Operations Team",
+    "recommended_actions": [
+      "Verify crond, journal evidence, owner and crontab source.",
+      "Correct the syntax while preserving the previous entry.",
+      "Test the command non-destructively under the execution identity."
+    ],
+    "verified_commands": [
+      {
+        "command": "systemctl status crond",
+        "explanation": "Check the cron daemon."
+      },
+      {
+        "command": "journalctl -u crond --since today",
+        "explanation": "Review cron parsing and execution evidence."
+      },
+      {
+        "command": "crontab -l -u <user>",
+        "explanation": "Display the user's installed crontab."
+      }
+    ],
+    "review_status": "validated_candidate",
+    "platform": "RHEL/Linux",
+    "synthetic_incident": {
+      "category": "software",
+      "impact": "3",
+      "urgency": "2",
+      "raw_logs": "crond: bad minute\nerrors in crontab file, cannot install\nexpected batch output missing",
+      "recent_changes": [
+        "Maintenance changed the batch schedule"
+      ],
+      "requires_engineer_review": false,
+      "review_reason": "Syntax correction is controlled but diagnosis is low risk."
+    }
+  },
+  {
+    "incident_id": "HIST-1017",
+    "short_description": "Windows system drive fills from IIS log accumulation",
+    "description": "IIS logs exhaust the Windows system volume because rollover and retention are ineffective.",
+    "category": "Infrastructure",
+    "error_patterns": [
+      "system drive low disk space",
+      "IIS log files",
+      "There is not enough space on the disk"
+    ],
+    "root_cause": "IIS logs accumulated without an effective approved archival and retention process.",
+    "suggested_team": "Windows Operations Team",
+    "recommended_actions": [
+      "Identify IIS log consumption and confirm audit retention requirements.",
+      "Archive or remove only logs beyond the approved retention period.",
+      "Configure rollover plus an approved scheduled retention process."
+    ],
+    "verified_commands": [
+      {
+        "command": "Get-PSDrive -PSProvider FileSystem",
+        "explanation": "Show free space on filesystem drives."
+      },
+      {
+        "command": "Get-ChildItem $env:SystemDrive\\inetpub\\logs\\LogFiles -File -Recurse | Sort-Object Length -Descending | Select-Object -First 20 FullName,Length,LastWriteTime",
+        "explanation": "List the largest IIS logs without changing them."
+      }
+    ],
+    "review_status": "validated_candidate",
+    "platform": "Windows/Wintel",
+    "synthetic_incident": {
+      "category": "hardware",
+      "impact": "2",
+      "urgency": "2",
+      "raw_logs": "System drive free space below 2%\nIIS W3C logs consume 88 GB\nThere is not enough space on the disk",
+      "recent_changes": [
+        "Traffic volume increased"
+      ],
+      "requires_engineer_review": true,
+      "review_reason": "Log removal requires retention and evidence approval."
+    }
+  },
+  {
+    "incident_id": "HIST-1018",
+    "short_description": "Windows application service blocked by failed dependency",
+    "description": "A Windows service cannot start because a required dependency is stopped or misconfigured.",
+    "category": "Infrastructure",
+    "error_patterns": [
+      "Event ID 7001",
+      "dependency service or group failed to start",
+      "Error 1068"
+    ],
+    "root_cause": "A required dependency failed during startup and prevented the application service from starting.",
+    "suggested_team": "Windows Operations Team",
+    "recommended_actions": [
+      "Use Service Control Manager events to identify the failed dependency.",
+      "Correct the dependency or its supported configuration.",
+      "Start and validate the dependency before the application service."
+    ],
+    "verified_commands": [
+      {
+        "command": "Get-Service -Name <service> -RequiredServices",
+        "explanation": "List required service dependencies."
+      },
+      {
+        "command": "sc.exe qc <service>",
+        "explanation": "Display the service configuration."
+      },
+      {
+        "command": "Get-WinEvent -FilterHashtable @{LogName='System'; ProviderName='Service Control Manager'; Id=7000,7001,7009,7011} -MaxEvents 50",
+        "explanation": "Read relevant Service Control Manager events."
+      }
+    ],
+    "review_status": "validated_candidate",
+    "platform": "Windows/Wintel",
+    "synthetic_incident": {
+      "category": "software",
+      "impact": "2",
+      "urgency": "2",
+      "raw_logs": "Service Control Manager Event ID 7001\nThe dependency service or group failed to start\nApplication service returned Error 1068",
+      "recent_changes": [
+        "Service startup policy updated"
+      ],
+      "requires_engineer_review": false,
+      "review_reason": "Dependency repair must follow vendor configuration but initial triage is safe."
+    }
+  },
+  {
+    "incident_id": "HIST-1019",
+    "short_description": "Windows RDP unavailable because Remote Desktop Services stopped",
+    "description": "RDP is unavailable while console access remains healthy and TermService is unexpectedly stopped.",
+    "category": "Infrastructure",
+    "error_patterns": [
+      "RDP connection refused",
+      "TermService stopped",
+      "port 3389 not listening"
+    ],
+    "root_cause": "Remote Desktop Services remained stopped after maintenance and the RDP listener was therefore unavailable.",
+    "suggested_team": "Windows Operations Team",
+    "recommended_actions": [
+      "Confirm console access, host reachability, firewall, listener and TermService state.",
+      "Start TermService only when dependencies and policy are healthy.",
+      "Validate a new session and monitor for recurrence."
+    ],
+    "verified_commands": [
+      {
+        "command": "Get-Service TermService",
+        "explanation": "Read the Remote Desktop Services state."
+      },
+      {
+        "command": "Get-NetTCPConnection -LocalPort 3389 -State Listen",
+        "explanation": "Check for the local RDP listener."
+      },
+      {
+        "command": "qwinsta",
+        "explanation": "List Remote Desktop sessions."
+      }
+    ],
+    "review_status": "validated_candidate",
+    "platform": "Windows/Wintel",
+    "synthetic_incident": {
+      "category": "software",
+      "impact": "2",
+      "urgency": "2",
+      "raw_logs": "RDP connection refused\nTermService status: Stopped\nTCP 3389 not listening",
+      "recent_changes": [
+        "Server maintenance completed"
+      ],
+      "requires_engineer_review": true,
+      "review_reason": "Restarting RDS can disconnect users and must be coordinated."
+    }
+  },
+  {
+    "incident_id": "HIST-1020",
+    "short_description": "Windows Update fails because SRP or EFI partition lacks space",
+    "description": "A specific Windows update fails after logs confirm insufficient free space in the boot-related partition.",
+    "category": "Patch",
+    "error_patterns": [
+      "We couldn't update the system reserved partition",
+      "0x800F0922",
+      "SRP free space"
+    ],
+    "root_cause": "The System Reserved or EFI System Partition lacked the free space required by the confirmed update operation.",
+    "suggested_team": "Windows Patch Management Team",
+    "recommended_actions": [
+      "Record the exact update, error code and disk layout.",
+      "Prepare backup and tested boot-recovery media.",
+      "Follow the Microsoft procedure matching the confirmed SRP or EFI layout."
+    ],
+    "verified_commands": [
+      {
+        "command": "Get-Volume",
+        "explanation": "Display volumes and free space."
+      },
+      {
+        "command": "Get-Partition",
+        "explanation": "Display the partition layout without modifying it."
+      }
+    ],
+    "review_status": "validated_candidate",
+    "platform": "Windows/Wintel",
+    "synthetic_incident": {
+      "category": "software",
+      "impact": "3",
+      "urgency": "2",
+      "raw_logs": "Windows Update failed 0x800F0922\nWe couldn't update the system reserved partition\nEFI partition free space below required threshold",
+      "recent_changes": [
+        "Monthly cumulative update approved"
+      ],
+      "requires_engineer_review": true,
+      "review_reason": "Boot partition operations are high risk and require recovery readiness."
+    }
+  },
+  {
+    "incident_id": "HIST-1021",
+    "short_description": "Windows application latency correlates with antivirus scanning",
+    "description": "Measured security-scanner activity dominates I/O on application paths during the degradation window.",
+    "category": "Performance",
+    "error_patterns": [
+      "antivirus scan latency",
+      "MsMpEng high I/O",
+      "real-time protection performance"
+    ],
+    "root_cause": "Real-time scanning of the application's high-churn data path caused the measured storage latency.",
+    "suggested_team": "Endpoint Security Team",
+    "recommended_actions": [
+      "Record and analyze scanner performance during the incident.",
+      "Check built-in and server-role exclusions first.",
+      "Add only a narrow vendor-supported exclusion after security approval."
+    ],
+    "verified_commands": [
+      {
+        "command": "Get-MpPreference | Select-Object ExclusionPath,ExclusionProcess",
+        "explanation": "Display configured Defender exclusions."
+      },
+      {
+        "command": "Get-Process MsMpEng | Select-Object CPU,WorkingSet,Id",
+        "explanation": "Inspect the Defender process without changing protection."
+      }
+    ],
+    "review_status": "validated_candidate",
+    "platform": "Windows/Wintel",
+    "synthetic_incident": {
+      "category": "software",
+      "impact": "2",
+      "urgency": "2",
+      "raw_logs": "MsMpEng sustained high disk I/O\nApplication response time 8.2 seconds during real-time scan\nStorage latency returned to baseline after scan window",
+      "recent_changes": [
+        "Application data path changed"
+      ],
+      "requires_engineer_review": true,
+      "review_reason": "Security exclusions require security-owner approval; protection must not be disabled."
+    }
+  },
+  {
+    "incident_id": "HIST-1022",
+    "short_description": "Hyper-V guests slow because host CPU is oversubscribed",
+    "description": "Multiple guests degrade while Hyper-V logical-processor counters show sustained host contention.",
+    "category": "Performance",
+    "error_patterns": [
+      "Hyper-V CPU contention",
+      "logical processor total run time",
+      "multiple VMs slow"
+    ],
+    "root_cause": "One workload consumed disproportionate CPU on an oversubscribed Hyper-V host.",
+    "suggested_team": "Virtualization Operations Team",
+    "recommended_actions": [
+      "Measure Hyper-V logical and virtual processor counters.",
+      "Identify the responsible workload and confirm capacity pressure.",
+      "Use approved throttling, right-sizing, capacity addition or live migration."
+    ],
+    "verified_commands": [
+      {
+        "command": "Get-Counter '\\Hyper-V Hypervisor Logical Processor(*)\\% Total Run Time'",
+        "explanation": "Measure physical logical-processor utilization."
+      },
+      {
+        "command": "Get-VM | Select-Object Name,State,ProcessorCount,MemoryAssigned",
+        "explanation": "Inventory VM resource assignments."
+      }
+    ],
+    "review_status": "validated_candidate",
+    "platform": "Windows/Wintel",
+    "synthetic_incident": {
+      "category": "hardware",
+      "impact": "2",
+      "urgency": "2",
+      "raw_logs": "Hyper-V logical processor total run time sustained above 95%\nSeven VMs report latency\nanalytics VM CPU demand increased 4x",
+      "recent_changes": [
+        "Analytics workload schedule changed"
+      ],
+      "requires_engineer_review": true,
+      "review_reason": "Migration or resource changes affect multiple workloads."
+    }
+  },
+  {
+    "incident_id": "HIST-1023",
+    "short_description": "Windows domain login fails from broken secure channel",
+    "description": "Domain authentication fails because the member server secure channel no longer matches Active Directory.",
+    "category": "Identity",
+    "error_patterns": [
+      "trust relationship between this workstation and the primary domain failed",
+      "secure channel false",
+      "Netlogon error"
+    ],
+    "root_cause": "The member server machine-account secret no longer matched the Active Directory computer account.",
+    "suggested_team": "Identity and Access Team",
+    "recommended_actions": [
+      "Verify DNS, time, DC location and the secure channel.",
+      "Confirm local or console administrative access.",
+      "Repair the secure channel with approved credentials; rejoin only if repair fails."
+    ],
+    "verified_commands": [
+      {
+        "command": "Test-ComputerSecureChannel -Verbose",
+        "explanation": "Test the member-server secure channel."
+      },
+      {
+        "command": "nltest /dsgetdc:<domain>",
+        "explanation": "Locate a domain controller."
+      },
+      {
+        "command": "w32tm /query /status",
+        "explanation": "Check Windows time synchronization."
+      }
+    ],
+    "review_status": "validated_candidate",
+    "platform": "Windows/Wintel",
+    "synthetic_incident": {
+      "category": "software",
+      "impact": "2",
+      "urgency": "1",
+      "raw_logs": "The trust relationship between this workstation and the primary domain failed\nTest-ComputerSecureChannel returned False\nlocal administrator login succeeds",
+      "recent_changes": [
+        "VM restored from snapshot"
+      ],
+      "requires_engineer_review": true,
+      "review_reason": "Trust repair requires privileged domain credentials and fallback access."
+    }
+  },
+  {
+    "incident_id": "HIST-1024",
+    "short_description": "Enterprise DNS outage affects RHEL and Windows workloads",
+    "description": "Multiple network segments and both operating-system families fail against the shared DNS service.",
+    "category": "Network",
+    "error_patterns": [
+      "enterprise DNS outage",
+      "SERVFAIL across hosts",
+      "DNS timeout multiple platforms"
+    ],
+    "root_cause": "The shared enterprise recursive DNS service became unavailable to multiple client segments.",
+    "suggested_team": "Network Operations Team",
+    "recommended_actions": [
+      "Reproduce against the shared resolver from representative Linux and Windows hosts.",
+      "Invoke the DNS major-incident procedure and restore service or approved failover.",
+      "Validate representative records from both platforms and segments."
+    ],
+    "verified_commands": [
+      {
+        "command": "dig @<resolver> <known-record>",
+        "explanation": "Test the shared resolver from Linux."
+      },
+      {
+        "command": "Resolve-DnsName <known-record> -Server <resolver>",
+        "explanation": "Test the shared resolver from Windows."
+      }
+    ],
+    "review_status": "validated_candidate",
+    "platform": "Cross-platform",
+    "synthetic_incident": {
+      "category": "network",
+      "impact": "1",
+      "urgency": "1",
+      "raw_logs": "SERVFAIL from Linux and Windows hosts\nDNS timeout across three network segments\nIP connectivity to dependencies remains healthy",
+      "recent_changes": [],
+      "requires_engineer_review": true,
+      "review_reason": "The evidence indicates a shared major incident requiring coordinated failover."
+    }
+  },
+  {
+    "incident_id": "HIST-1025",
+    "short_description": "Shared time-source outage causes cross-platform Kerberos failures",
+    "description": "RHEL and Windows hosts drift after the authoritative time hierarchy becomes unavailable.",
+    "category": "Identity",
+    "error_patterns": [
+      "Clock skew too great",
+      "time source unavailable",
+      "Kerberos failures across platforms"
+    ],
+    "root_cause": "The shared authoritative time source failed and multiple hosts drifted outside the authentication tolerance.",
+    "suggested_team": "Core Infrastructure Team",
+    "recommended_actions": [
+      "Establish scope and compare offsets against the approved authoritative source.",
+      "Restore the enterprise hierarchy or approved failover.",
+      "Allow controlled convergence and validate Kerberos after offsets recover."
+    ],
+    "verified_commands": [
+      {
+        "command": "chronyc tracking",
+        "explanation": "Read Linux clock offset and source state."
+      },
+      {
+        "command": "chronyc sources -v",
+        "explanation": "Read Linux source reachability."
+      },
+      {
+        "command": "w32tm /query /status",
+        "explanation": "Read Windows clock status."
+      },
+      {
+        "command": "w32tm /query /source",
+        "explanation": "Read the Windows time source."
+      }
+    ],
+    "review_status": "validated_candidate",
+    "platform": "Cross-platform",
+    "synthetic_incident": {
+      "category": "software",
+      "impact": "1",
+      "urgency": "1",
+      "raw_logs": "Kerberos: Clock skew too great\nchronyd reports no selectable sources\nWindows hosts report Local CMOS Clock\nmultiple sites affected",
+      "recent_changes": [
+        "Authoritative NTP maintenance started"
+      ],
+      "requires_engineer_review": true,
+      "review_reason": "Fleet-wide time correction can affect clustered and transactional systems."
+    }
   }
 ]
-                  
